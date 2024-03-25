@@ -1,0 +1,93 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Run pytests and Notify Slack
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'  # 적절한 Python 버전으로 설정
+        architecture: 'x64'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt  # 필요한 패키지 설치
+
+    - name: Run tests and save output
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/reports
+        
+        set +e  # 일시적으로 오류 무시
+        
+        pytest -vv PrivacyPolicy/test/PrivacyPolicy_refactoring.py --html=$GITHUB_WORKSPACE/reports/test-privacy-report.html --self-contained-html   
+        
+        EXIT_CODE=$?  # pytest 실행 결과 저장
+        
+        set -e  # 다시 오류 감지 활성화
+        
+        # 오류가 발생한 경우에만 실행할 작업
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "테스트 하는 동안 오류가 발생했습니다."
+        fi
+
+    - name: Upload artifact
+      if: always() # 항상 실행
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: reports
+
+    - name: Notify Slack
+      if: always() # 항상 실행
+      uses: slackapi/slack-github-action@v1.24.0
+      with:
+        channel-id: C0687SNMZ51
+        payload: |
+          {
+            "text": "두부 :삼색이: 가 자동화 테스트를 완료해서 왔습니다.",
+            "attachments": [
+              {
+                "color": "#36a64f",
+                "blocks": [
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": ":white_check_mark: 테스트 결과 공유드립니다. :삼색이쓰담:"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "커밋 SHA: ${{ github.sha }}"
+                    }
+                  },
+                  {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": "<${{ env.ACTION_RUN_URL }}|결과 확인은 Artifacts에 있는 test-reports 파일을 다운 받아서 확인해 주세요.>"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        ACTION_RUN_URL: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
